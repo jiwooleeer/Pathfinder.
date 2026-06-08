@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   BookmarkSimple,
-  ChartBar,
+  CaretRight,
   ChatCircleText,
   EnvelopeSimple,
   Eye,
@@ -16,6 +16,10 @@ import {
 } from '@phosphor-icons/react';
 import { departments, resources, reviews } from './data';
 
+const previewImages = Object.values(
+  import.meta.glob('./assets/previews/*.{jpg,jpeg,png,webp}', { eager: true, query: '?url', import: 'default' }),
+);
+
 const tabs = [
   { key: 'home', label: '홈', Icon: House },
   { key: 'reviews', label: '후기', Icon: ChatCircleText },
@@ -23,14 +27,18 @@ const tabs = [
   { key: 'write', label: '작성', Icon: PencilSimpleLine },
 ];
 
-function formatPrice(price) {
-  return `${price.toLocaleString('ko-KR')}원`;
+function getPreviewImagesForResource(resource) {
+  if (!previewImages.length) return [];
+
+  const startIndex = Math.abs(
+    [...resource.id].reduce((sum, char) => sum + char.charCodeAt(0), 0),
+  ) % previewImages.length;
+
+  return [0, 1, 2].map((offset) => previewImages[(startIndex + offset) % previewImages.length]);
 }
 
-function isImportantLabel(label) {
-  return ['합격', '면접후기', '포트폴리오준비', '포트폴리오'].some((keyword) =>
-    label.includes(keyword),
-  );
+function formatPrice(price) {
+  return `${price.toLocaleString('ko-KR')}원`;
 }
 
 function sortItems(items, sort) {
@@ -123,106 +131,195 @@ function BottomNav({ page, setPage }) {
 }
 
 function HomePage({ setPage }) {
-  const [selectedDepartmentId, setSelectedDepartmentId] = useState(departments[0].id);
-  const selectedDepartment = departments.find((department) => department.id === selectedDepartmentId) ?? departments[0];
-  const selectedReviews = reviews.filter((review) => review.departmentId === selectedDepartmentId);
-  const selectedPortfolios = resources.filter(
-    (resource) => resource.departmentId === selectedDepartmentId && resource.type === '포트폴리오',
-  );
-  const homePortfolios = [
-    ...selectedPortfolios,
-    ...resources.filter(
-      (resource) => resource.type === '포트폴리오' && resource.departmentId !== selectedDepartmentId,
-    ),
-  ];
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState('');
+  const selectedDepartment = departments.find((department) => department.id === selectedDepartmentId) ?? null;
+  const selectedReviews = selectedDepartment
+    ? reviews.filter((review) => review.departmentId === selectedDepartmentId)
+    : [];
+  const selectedSuccessReviews = selectedReviews.filter((review) => review.result === '합격');
+  const representativeSuccess = sortItems(selectedSuccessReviews, '도움순')[0];
+  const selectedPortfolios = selectedDepartment
+    ? resources.filter(
+      (resource) => resource.departmentId === selectedDepartmentId && resource.type === '포트폴리오',
+    )
+    : [];
+  const homePortfolios = selectedDepartment
+    ? [
+      ...selectedPortfolios,
+      ...resources.filter(
+        (resource) => resource.type === '포트폴리오' && resource.departmentId !== selectedDepartmentId,
+      ),
+    ]
+    : [];
 
   return (
     <main className="page home-page">
-      <section className="hero">
+      <section className="hero hero-with-select">
         <h1>
           조형대 전과,
           <br />
           혼자 준비하지 마세요.
         </h1>
         <p>
-          실제 합격자들의 후기, 포트폴리오, 면접 자료를 통해 내가 무엇을
-          준비해야 하는지 확인하세요.
+          실제 합격자들의 후기와 포트폴리오를 통해 무엇을 준비해야 하는지
+          확인하세요.
         </p>
+
+        <div className="hero-interest-control">
+          <div className={selectedDepartment ? 'interest-select-row has-action' : 'interest-select-row'}>
+            <select
+              id="interest-department"
+              value={selectedDepartmentId}
+              onChange={(event) => setSelectedDepartmentId(event.target.value)}
+            >
+              <option value="" disabled>준비하는 학과를 선택하세요</option>
+              {departments.map((department) => (
+                <option key={department.id} value={department.id}>
+                  {department.name}
+                </option>
+              ))}
+            </select>
+            {selectedDepartment && (
+              <button
+                aria-label={`${selectedDepartment.name} 상세 보기`}
+                onClick={() => setPage({ name: 'department', id: selectedDepartment.id })}
+              >
+                <CaretRight size={20} weight="bold" />
+              </button>
+            )}
+          </div>
+        </div>
       </section>
 
-      <section className="interest-control">
-        <label htmlFor="interest-department">관심 학과</label>
-        <div className="interest-select-row">
-          <select
-            id="interest-department"
-            value={selectedDepartmentId}
-            onChange={(event) => setSelectedDepartmentId(event.target.value)}
-          >
-            {departments.map((department) => (
-              <option key={department.id} value={department.id}>
-                {department.name}
-              </option>
-            ))}
-          </select>
-          <button onClick={() => setPage({ name: 'department', id: selectedDepartment.id })}>
-            학과 보기
-          </button>
-        </div>
-      </section>
+      {selectedDepartment && (
+        <div className="home-content-reveal">
+          <FeaturedSuccessCase review={representativeSuccess} setPage={setPage} />
 
-      <ReviewPreviewSection
-        title="지금 가장 도움된 후기"
-        items={sortItems(selectedReviews, '도움순').slice(0, 3)}
-        setPage={setPage}
-        featured
-        teaser
-        viewAllPage={{ name: 'reviews', departmentId: selectedDepartmentId }}
-      />
-      <ResourcePreviewSection
-        title="합격 포트폴리오"
-        items={sortItems(homePortfolios, '저장순').slice(0, 3)}
-        setPage={setPage}
-        featured
-        teaser
-        viewAllPage={{ name: 'resources', departmentId: selectedDepartmentId, resourceType: '포트폴리오' }}
-      />
-      <section className="section">
-        <div className="section-head">
-          <h2>서비스 통계</h2>
+          <ReviewPreviewSection
+            title="지금 가장 도움된 후기"
+            items={sortItems(selectedReviews, '도움순').slice(0, 3)}
+            setPage={setPage}
+            featured
+            teaser
+            viewAllPage={{ name: 'reviews', departmentId: selectedDepartmentId }}
+          />
+          <ScrollReveal delay={130}>
+            <ResourcePreviewSection
+              title="합격 포트폴리오"
+              items={sortItems(homePortfolios, '저장순').slice(0, 3)}
+              setPage={setPage}
+              featured
+              teaser
+              viewAllPage={{ name: 'resources', departmentId: selectedDepartmentId, resourceType: '포트폴리오' }}
+            />
+          </ScrollReveal>
+          <ScrollReveal delay={180}>
+            <section className="section">
+              <div className="section-head">
+                <h2>서비스 통계</h2>
+              </div>
+              <div className="metric-grid">
+                <div>
+                  <ChatCircleText size={18} weight="regular" />
+                  <strong>실제 후기</strong>
+                  <span>30+</span>
+                </div>
+                <div>
+                  <FileText size={18} weight="regular" />
+                  <strong>합격 포트폴리오</strong>
+                  <span>12+</span>
+                </div>
+                <div>
+                  <ShieldCheck size={18} weight="regular" />
+                  <strong>인증 판매자</strong>
+                  <span>8+</span>
+                </div>
+                <div>
+                  <UsersThree size={18} weight="regular" />
+                  <strong>전과 성공 사례</strong>
+                  <span>47+</span>
+                </div>
+              </div>
+            </section>
+          </ScrollReveal>
         </div>
-        <div className="metric-grid">
-          <div>
-            <ChatCircleText size={18} weight="regular" />
-            <strong>실제 후기</strong>
-            <span>30+</span>
-          </div>
-          <div>
-            <FileText size={18} weight="regular" />
-            <strong>합격 포트폴리오</strong>
-            <span>12+</span>
-          </div>
-          <div>
-            <ChartBar size={18} weight="regular" />
-            <strong>면접 자료</strong>
-            <span>5+</span>
-          </div>
-          <div>
-            <UsersThree size={18} weight="regular" />
-            <strong>참여자</strong>
-            <span>47+</span>
-          </div>
-        </div>
-      </section>
+      )}
     </main>
   );
 }
+function successQuoteFor(review) {
+  if (review.summary.includes('조용')) return '면접장은 생각보다 조용했어요.';
+  if (review.summary.includes('포폴 설명')) return '포트폴리오 설명 연습이 제일 도움됐어요.';
+  if (review.summary.includes('작업 과정')) return '완성본보다 작업 과정을 많이 물어봤어요.';
+  if (review.summary.includes('개별 연락')) return '결과 기다리는 시간이 제일 불안했어요.';
+  if (review.summary.includes('자소서')) return '자소서를 거창하게 쓰려다 오히려 막혔어요.';
+  return '준비 방향을 다시 잡은 게 가장 컸어요.';
+}
 
+function ScrollReveal({ children, delay = 0 }) {
+  const [isVisible, setIsVisible] = useState(false);
+  const [node, setNode] = useState(null);
+
+  useEffect(() => {
+    if (!node) return undefined;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '0px 0px -28% 0px', threshold: 0.12 },
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [node]);
+
+  return (
+    <div
+      ref={setNode}
+      className={isVisible ? 'scroll-reveal is-visible' : 'scroll-reveal'}
+      style={{ '--reveal-delay': `${delay}ms` }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function FeaturedSuccessCase({ review, setPage }) {
+  if (!review) return null;
+
+  const quote = successQuoteFor(review);
+
+  return (
+    <section className="section featured-success-section">
+      <div className="section-head">
+        <h2>오늘의 합격 사례</h2>
+      </div>
+      <article className="featured-success-card">
+        <div className="featured-success-route">
+          <strong>{review.fromMajor} → {departmentBadgeName(review.toDepartment)}</strong>
+        </div>
+        <div className="featured-success-meta">
+          학점 {review.gpaRange} · <span className="accent-text">{review.result}</span>
+        </div>
+        <p>"{quote}"</p>
+        <button onClick={() => setPage({ name: 'reviewDetail', id: review.id })}>
+          후기 보기 →
+        </button>
+      </article>
+    </section>
+  );
+}
 function DepartmentPage({ id, setPage }) {
   const department = departments.find((item) => item.id === id) ?? departments[0];
   const departmentReviews = reviews.filter((review) => review.departmentId === department.id);
   const departmentResources = resources.filter((resource) => resource.departmentId === department.id);
   const portfolioResources = departmentResources.filter((resource) => resource.type === '포트폴리오');
   const interviewReviews = departmentReviews.filter((review) => review.tags.some((tag) => tag.includes('면접')));
+  const acceptedReviews = departmentReviews.filter((review) => review.result === '합격');
   const interviewResources = departmentResources.filter((resource) => resource.type.includes('면접'));
 
   return (
@@ -264,21 +361,17 @@ function DepartmentPage({ id, setPage }) {
 
       <section className="section">
         <div className="section-head">
-          <h2>AI 인사이트</h2>
+          <h2>후기 요약</h2>
         </div>
         <AIInsightCard insight={department.insight} />
       </section>
-      <section className="section">
-        <div className="section-head">
-          <h2>많이 언급된 키워드</h2>
-        </div>
-        <div className="tag-row keyword-row">
-          {department.keywords.map((keyword) => (
-            <span key={keyword} className={isImportantLabel(keyword) ? 'is-important' : ''}>{keyword}</span>
-          ))}
-        </div>
-      </section>
-      <ReviewPreviewSection title="최근 합격 후기" items={departmentReviews.filter((review) => review.result === '합격').slice(0, 4)} setPage={setPage} />
+      <SimilarSuccessSection
+        title="나와 비슷한 합격자"
+        items={sortItems(acceptedReviews, '도움순').slice(0, 6)}
+        setPage={setPage}
+        compact={false}
+      />
+      <ReviewPreviewSection title="최근 합격 후기" items={acceptedReviews.slice(0, 4)} setPage={setPage} />
       <ResourcePreviewSection title="합격 포트폴리오" items={portfolioResources.slice(0, 4)} setPage={setPage} />
       <ResourcePreviewSection title="면접 자료" items={interviewResources.slice(0, 4)} setPage={setPage} />
       <OfficialNoticeCard />
@@ -289,36 +382,63 @@ function DepartmentPage({ id, setPage }) {
 function AIInsightCard({ insight }) {
   return (
     <article className="insight-card">
-      <div className="insight-top">
-        <div>
-          <span>중요도 높음</span>
-          <strong>{insight.focus}</strong>
-        </div>
-        <div>
-          <span>후기 언급 빈도</span>
-          <strong className="accent-text">{insight.frequency}</strong>
-        </div>
+      <p className="insight-context">합격자들이 가장 많이 언급한 준비 포인트</p>
+      <div className="tag-row keyword-row compact-keywords insight-keywords">
+        {insight.points.map((point) => (
+          <span key={point} className="is-important">{point}</span>
+        ))}
       </div>
       <p>{insight.summary}</p>
       <div className="insight-divider" />
       <div className="insight-list">
-        <span>후기에서 자주 나온 의견</span>
+        <span>자주 언급된 의견</span>
         <ul>
           {insight.opinions.map((opinion) => (
             <li key={opinion}>{opinion}</li>
           ))}
         </ul>
       </div>
-      <div className="insight-divider" />
-      <div className="tag-row keyword-row compact-keywords">
-        {insight.points.map((point) => (
-          <span key={point} className="is-important">{point}</span>
-        ))}
-      </div>
     </article>
   );
 }
 
+function SimilarSuccessSection({ title, items, setPage, ctaLabel, viewAllPage }) {
+  if (!items.length) return null;
+
+  return (
+    <section className="section success-section">
+      <div className="section-head">
+        <h2>{title}</h2>
+      </div>
+      <div className="success-stack">
+        {items.map((review) => {
+          const isNonMajor = review.fromMajor !== review.toDepartment;
+          const quote = review.summary.split('.')[0];
+
+          return (
+            <button
+              key={review.id}
+              className="success-case-card"
+              onClick={() => setPage({ name: 'reviewDetail', id: review.id })}
+            >
+              <span className="success-kind">{isNonMajor ? '비전공' : '전공'}</span>
+              <strong className="success-person-major">{review.fromMajor}</strong>
+              <span className="success-result-line">{departmentBadgeName(review.toDepartment)} 합격</span>
+              <span className="success-gpa">학점 {review.gpaRange}</span>
+              <p>"{quote}."</p>
+              <span className="success-link">후기 보기 →</span>
+            </button>
+          );
+        })}
+      </div>
+      {ctaLabel && (
+        <button className="inline-cta" onClick={() => setPage(viewAllPage ?? { name: 'reviews' })}>
+          {ctaLabel} →
+        </button>
+      )}
+    </section>
+  );
+}
 function ReviewPreviewSection({ title, items, setPage, featured = false, teaser = false, viewAllPage }) {
   return (
     <section className="section">
@@ -413,6 +533,11 @@ function ReviewListPage({ selectedDepartmentId, selectedResult, setPage }) {
 
   return (
     <main className="page">
+      {selectedDepartmentId && (
+        <button className="back-button" onClick={() => setPage({ name: 'department', id: selectedDepartmentId })}>
+          ← 학과
+        </button>
+      )}
       <PageTitle eyebrow="후기 탐색" title="합격자들은 어떻게 준비했을까요?" />
       <DepartmentSelect value={departmentId} onChange={setDepartmentId} />
       <div className="filter-block">
@@ -477,10 +602,6 @@ function ResourceCard({ resource, setPage }) {
       </div>
       <h3>{resource.title}</h3>
       <p>{resource.description}</p>
-      <p className="condition-line resource-condition-line">
-        학점 {resource.gpa} · {resource.majorStatus}
-        {resource.pageCount ? ` · ${resource.pageCount}p` : ''}
-      </p>
       <div className="rating-row">
         <span className="meta-icons">
           <Eye size={14} weight="regular" /> {resource.views}
@@ -515,6 +636,11 @@ function ResourceMarketPage({ selectedDepartmentId, selectedResourceType, setPag
 
   return (
     <main className="page">
+      {selectedDepartmentId && (
+        <button className="back-button" onClick={() => setPage({ name: 'department', id: selectedDepartmentId })}>
+          ← 학과
+        </button>
+      )}
       <PageTitle eyebrow="자료 탐색" title="합격한 사람들은 무엇을 준비했을까요?" />
       <DepartmentSelect value={departmentId} onChange={setDepartmentId} />
       <div className="filter-block">
@@ -535,6 +661,7 @@ function ResourceDetailPage({ id, setPage, openPayment }) {
   const relatedReviews = reviews
     .filter((review) => review.departmentId === resource.departmentId)
     .slice(0, 2);
+  const previewSet = getPreviewImagesForResource(resource);
 
   return (
     <main className="page resource-detail-page">
@@ -548,10 +675,6 @@ function ResourceDetailPage({ id, setPage, openPayment }) {
             {departmentBadgeName(resource.toDepartment)}
           </span>
           <h1>{resource.title}</h1>
-          <p className="condition-line resource-condition-line">
-            학점 {resource.gpa} · {resource.majorStatus}
-            {resource.pageCount ? ` · ${resource.pageCount}p` : ''}
-          </p>
           <div className="seller-trust-card">
             <span>
               <ShieldCheck size={16} weight="regular" />
@@ -576,20 +699,40 @@ function ResourceDetailPage({ id, setPage, openPayment }) {
         </section>
         <section className="detail-block">
           <h2>미리보기</h2>
-          <div className="preview-grid">
-            <div className="preview-page">
-              <span>Preview 01</span>
-              <p>구성 흐름과 목차 일부를 확인할 수 있습니다.</p>
+          {previewSet.length ? (
+            <div className="preview-grid image-preview-grid">
+              <div className="preview-page image-preview-page">
+                <img src={previewSet[0]} alt="포트폴리오 미리보기 1" />
+                <span>Preview 01</span>
+              </div>
+              <div className="preview-page image-preview-page soft-locked-preview">
+                <img src={previewSet[1]} alt="포트폴리오 미리보기 2" />
+                <span>Preview 02</span>
+              </div>
+              <div className="preview-page image-preview-page locked-image-preview">
+                <img src={previewSet[2]} alt="잠긴 포트폴리오 미리보기" />
+                <div className="locked-preview-overlay">
+                  <strong>🔒</strong>
+                  <p>구매 후 전체 열람 가능</p>
+                </div>
+              </div>
             </div>
-            <div className="preview-page blur">
-              <span>Preview 02</span>
-              <p>작업 설명 방식 일부 공개</p>
+          ) : (
+            <div className="preview-grid">
+              <div className="preview-page">
+                <span>Preview 01</span>
+                <p>구성 흐름과 목차 일부를 확인할 수 있습니다.</p>
+              </div>
+              <div className="preview-page blur">
+                <span>Preview 02</span>
+                <p>작업 설명 방식 일부 공개</p>
+              </div>
+              <div className="preview-page locked">
+                <span>Locked</span>
+                <p>구매 후 전체 열람 가능</p>
+              </div>
             </div>
-            <div className="preview-page locked">
-              <span>Locked</span>
-              <p>구매 후 전체 열람 가능</p>
-            </div>
-          </div>
+          )}
         </section>
         <section className="detail-block">
           <h2>구매후기</h2>
