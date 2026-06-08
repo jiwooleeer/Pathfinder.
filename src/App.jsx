@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   BookmarkSimple,
+  CaretDown,
   CaretRight,
   ChatCircleText,
   EnvelopeSimple,
@@ -14,11 +15,23 @@ import {
   ShoppingBagOpen,
   UsersThree,
 } from '@phosphor-icons/react';
-import { departments, resources, reviews } from './data';
+import { currentDepartmentGroups, departments, resources, reviews } from './data';
 
 const previewImages = Object.values(
   import.meta.glob('./assets/previews/*.{jpg,jpeg,png,webp}', { eager: true, query: '?url', import: 'default' }),
 );
+
+const HOME_PROFILE_STORAGE_KEY = 'pathfinder-home-profile';
+
+function getStoredHomeProfile() {
+  if (typeof window === 'undefined') return {};
+
+  try {
+    return JSON.parse(window.localStorage.getItem(HOME_PROFILE_STORAGE_KEY) ?? '{}');
+  } catch {
+    return {};
+  }
+}
 
 const tabs = [
   { key: 'home', label: '홈', Icon: House },
@@ -63,6 +76,10 @@ function compactDepartmentName(name) {
   };
 
   return shortNames[name] ?? name.replace('학과', '');
+}
+
+function isDesignCollegeMajor(major) {
+  return departments.some((department) => department.name === major);
 }
 
 function departmentBadgeName(name) {
@@ -131,13 +148,22 @@ function BottomNav({ page, setPage }) {
 }
 
 function HomePage({ setPage }) {
-  const [selectedDepartmentId, setSelectedDepartmentId] = useState('');
+  const storedHomeProfile = useMemo(() => getStoredHomeProfile(), []);
+  const [selectedCollege, setSelectedCollege] = useState(storedHomeProfile.college ?? '');
+  const [selectedCurrentMajor, setSelectedCurrentMajor] = useState(storedHomeProfile.currentMajor ?? '');
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState(storedHomeProfile.departmentId ?? '');
+  const selectedCollegeGroup = currentDepartmentGroups.find((group) => group.college === selectedCollege) ?? null;
   const selectedDepartment = departments.find((department) => department.id === selectedDepartmentId) ?? null;
   const selectedReviews = selectedDepartment
     ? reviews.filter((review) => review.departmentId === selectedDepartmentId)
     : [];
   const selectedSuccessReviews = selectedReviews.filter((review) => review.result === '합격');
-  const representativeSuccess = sortItems(selectedSuccessReviews, '도움순')[0];
+  const matchingSuccessReviews = selectedCurrentMajor
+    ? selectedSuccessReviews.filter((review) => review.fromMajor === selectedCurrentMajor)
+    : [];
+  const representativeSuccess = sortItems(matchingSuccessReviews, '도움순')[0];
+  const hasCompleteProfile = Boolean(selectedCollege && selectedCurrentMajor && selectedDepartment);
+  const shouldShowSetupControls = !hasCompleteProfile;
   const selectedPortfolios = selectedDepartment
     ? resources.filter(
       (resource) => resource.departmentId === selectedDepartmentId && resource.type === '포트폴리오',
@@ -152,48 +178,137 @@ function HomePage({ setPage }) {
     ]
     : [];
 
+  useEffect(() => {
+    if (!hasCompleteProfile) return;
+
+    window.localStorage.setItem(
+      HOME_PROFILE_STORAGE_KEY,
+      JSON.stringify({
+        college: selectedCollege,
+        currentMajor: selectedCurrentMajor,
+        departmentId: selectedDepartmentId,
+      }),
+    );
+  }, [hasCompleteProfile, selectedCollege, selectedCurrentMajor, selectedDepartmentId]);
+
   return (
     <main className="page home-page">
       <section className="hero hero-with-select">
-        <h1>
-          조형대 전과,
-          <br />
-          혼자 준비하지 마세요.
-        </h1>
-        <p>
-          실제 합격자들의 후기와 포트폴리오를 통해 무엇을 준비해야 하는지
-          확인하세요.
-        </p>
+        {hasCompleteProfile ? (
+          <>
+            <h1>
+              {selectedCurrentMajor}에서
+              <br />
+              <span className="hero-target-line">
+                <span className="hero-target-picker">
+                  <span>{selectedDepartment.name}</span>
+                  <CaretDown size={22} weight="bold" />
+                  <select
+                    className="hero-target-select"
+                    value={selectedDepartmentId}
+                    onChange={(event) => setSelectedDepartmentId(event.target.value)}
+                    aria-label="준비하는 학과 변경"
+                  >
+                    {departments.map((department) => (
+                      <option key={department.id} value={department.id}>
+                        {department.name}
+                      </option>
+                    ))}
+                  </select>
+                </span>
+                로의 전과를
+              </span>
+              <br />
+              응원해요!
+            </h1>
+            <p>
+              저장된 관심 조건을 기준으로 도움된 후기와 합격 자료를 먼저 보여드릴게요.
+            </p>
+          </>
+        ) : (
+          <>
+            <h1>
+              조형대 전과,
+              <br />
+              혼자 준비하지 마세요.
+            </h1>
+            <p>
+              실제 합격자들의 후기와 포트폴리오를 통해 <br></br> 어떻게 준비해야 하는지
+              확인하세요.
+            </p>
+          </>
+        )}
 
-        <div className="hero-interest-control">
-          <div className={selectedDepartment ? 'interest-select-row has-action' : 'interest-select-row'}>
+        {shouldShowSetupControls && (
+          <div className="hero-interest-control">
+            <div className="interest-select-stack">
             <select
-              id="interest-department"
-              value={selectedDepartmentId}
-              onChange={(event) => setSelectedDepartmentId(event.target.value)}
+              value={selectedCollege}
+              onChange={(event) => {
+                setSelectedCollege(event.target.value);
+                setSelectedCurrentMajor('');
+                setSelectedDepartmentId('');
+              }}
             >
-              <option value="" disabled>준비하는 학과를 선택하세요</option>
-              {departments.map((department) => (
-                <option key={department.id} value={department.id}>
-                  {department.name}
+              <option value="">현재 단과대 선택</option>
+              {currentDepartmentGroups.map((group) => (
+                <option key={group.college} value={group.college}>
+                  {group.college}
                 </option>
               ))}
             </select>
-            {selectedDepartment && (
-              <button
-                aria-label={`${selectedDepartment.name} 상세 보기`}
-                onClick={() => setPage({ name: 'department', id: selectedDepartment.id })}
+
+            {selectedCollegeGroup && (
+              <select
+                value={selectedCurrentMajor}
+                onChange={(event) => {
+                  setSelectedCurrentMajor(event.target.value);
+                  setSelectedDepartmentId('');
+                }}
               >
-                <CaretRight size={20} weight="bold" />
-              </button>
+                <option value="">현재 학과 선택</option>
+                {selectedCollegeGroup.majors.map((major) => (
+                  <option key={major} value={major}>
+                    {major}
+                  </option>
+                ))}
+              </select>
             )}
+
+            {selectedCurrentMajor && (
+              <div className={selectedDepartment ? 'interest-select-row has-action' : 'interest-select-row'}>
+                <select
+                  id="interest-department"
+                  value={selectedDepartmentId}
+                  onChange={(event) => setSelectedDepartmentId(event.target.value)}
+                >
+                  <option value="" disabled>준비하는 학과 선택</option>
+                  {departments.map((department) => (
+                    <option key={department.id} value={department.id}>
+                      {department.name}
+                    </option>
+                  ))}
+                </select>
+                {selectedDepartment && (
+                  <button
+                    aria-label={`${selectedDepartment.name} 상세 보기`}
+                    onClick={() => setPage({ name: 'department', id: selectedDepartment.id })}
+                  >
+                    <CaretRight size={20} weight="bold" />
+                  </button>
+                )}
+              </div>
+            )}
+            </div>
           </div>
-        </div>
+        )}
       </section>
 
       {selectedDepartment && (
         <div className="home-content-reveal">
-          <FeaturedSuccessCase review={representativeSuccess} setPage={setPage} />
+          {representativeSuccess && (
+            <FeaturedSuccessCase review={representativeSuccess} setPage={setPage} />
+          )}
 
           <ReviewPreviewSection
             title="지금 가장 도움된 후기"
@@ -296,18 +411,23 @@ function FeaturedSuccessCase({ review, setPage }) {
   return (
     <section className="section featured-success-section">
       <div className="section-head">
-        <h2>오늘의 합격 사례</h2>
+        <h2>나와 비슷한 합격자</h2>
       </div>
       <article className="featured-success-card">
         <div className="featured-success-route">
-          <strong>{review.fromMajor} → {departmentBadgeName(review.toDepartment)}</strong>
+          <strong>
+            {review.fromMajor}
+            <CaretRight size={13} weight="bold" />
+            {departmentBadgeName(review.toDepartment)}
+          </strong>
         </div>
         <div className="featured-success-meta">
           학점 {review.gpaRange} · <span className="accent-text">{review.result}</span>
         </div>
         <p>"{quote}"</p>
         <button onClick={() => setPage({ name: 'reviewDetail', id: review.id })}>
-          후기 보기 →
+          후기 보기
+          <CaretRight size={12} weight="bold" />
         </button>
       </article>
     </section>
@@ -365,12 +485,6 @@ function DepartmentPage({ id, setPage }) {
         </div>
         <AIInsightCard insight={department.insight} />
       </section>
-      <SimilarSuccessSection
-        title="나와 비슷한 합격자"
-        items={sortItems(acceptedReviews, '도움순').slice(0, 6)}
-        setPage={setPage}
-        compact={false}
-      />
       <ReviewPreviewSection title="최근 합격 후기" items={acceptedReviews.slice(0, 4)} setPage={setPage} />
       <ResourcePreviewSection title="합격 포트폴리오" items={portfolioResources.slice(0, 4)} setPage={setPage} />
       <ResourcePreviewSection title="면접 자료" items={interviewResources.slice(0, 4)} setPage={setPage} />
@@ -412,7 +526,7 @@ function SimilarSuccessSection({ title, items, setPage, ctaLabel, viewAllPage })
       </div>
       <div className="success-stack">
         {items.map((review) => {
-          const isNonMajor = review.fromMajor !== review.toDepartment;
+          const isExternalCollege = !isDesignCollegeMajor(review.fromMajor);
           const quote = review.summary.split('.')[0];
 
           return (
@@ -421,19 +535,21 @@ function SimilarSuccessSection({ title, items, setPage, ctaLabel, viewAllPage })
               className="success-case-card"
               onClick={() => setPage({ name: 'reviewDetail', id: review.id })}
             >
-              <span className="success-kind">{isNonMajor ? '비전공' : '전공'}</span>
+              {isExternalCollege && <span className="success-kind">타단과대</span>}
               <strong className="success-person-major">{review.fromMajor}</strong>
-              <span className="success-result-line">{departmentBadgeName(review.toDepartment)} 합격</span>
-              <span className="success-gpa">학점 {review.gpaRange}</span>
+              <span className="success-gpa">학점 {review.gpaRange} · {review.nickname}</span>
               <p>"{quote}."</p>
-              <span className="success-link">후기 보기 →</span>
+              <span className="success-link">
+                후기 보기
+                <CaretRight size={12} weight="bold" />
+              </span>
             </button>
           );
         })}
       </div>
       {ctaLabel && (
         <button className="inline-cta" onClick={() => setPage(viewAllPage ?? { name: 'reviews' })}>
-          {ctaLabel} →
+          {ctaLabel}
         </button>
       )}
     </section>
@@ -482,7 +598,7 @@ function TeaserStack({ teaser, ctaLabel, onCta, children }) {
     <div className="teaser-frame">
       <div className="teaser-stack">{children}</div>
       <div className="teaser-fade">
-        <button onClick={onCta}>{ctaLabel} →</button>
+        <button onClick={onCta}>{ctaLabel}</button>
       </div>
     </div>
   );
@@ -680,7 +796,11 @@ function ResourceDetailPage({ id, setPage, openPayment }) {
               <ShieldCheck size={16} weight="regular" />
               인증 완료 판매자
             </span>
-            <p>{resource.fromMajor} → {resource.toDepartment} · 학점 {resource.gpa}</p>
+            <p className="seller-route-line">
+              {resource.fromMajor}
+              <CaretRight size={13} weight="bold" />
+              {resource.toDepartment} · 학점 {resource.gpa}
+            </p>
           </div>
           <p className="detail-meta-line">
             <Eye size={14} weight="regular" /> 조회 {resource.views}
