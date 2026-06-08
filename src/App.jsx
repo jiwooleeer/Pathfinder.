@@ -1118,7 +1118,7 @@ export default function App() {
   }, [page]);
 
   return (
-    <div className="app-shell">
+    <div className={page.name === 'home' ? 'app-shell home-shell' : 'app-shell'}>
       <Header page={page} setPage={setPage} />
       {pageNode}
       <BottomNav page={page} setPage={setPage} />
