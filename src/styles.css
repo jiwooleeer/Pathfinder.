@@ -1716,39 +1716,27 @@ p {
   }
 
   .app-shell {
-    width: min(100%, 920px);
+    width: min(100%, 430px);
     border-left: 1px solid var(--line);
     border-right: 1px solid var(--line);
   }
 
   .desktop-nav {
-    display: flex;
-  }
-
-  .bottom-nav {
     display: none;
   }
 
+  .bottom-nav {
+    display: grid;
+  }
+
   .page {
-    max-width: 760px;
-    margin: 0 auto;
-    padding-bottom: 54px;
+    max-width: none;
+    margin: 0;
+    padding-bottom: 100px;
   }
 
   .hero h1 {
-    font-size: 48px;
-  }
-
-  .resource-shortcuts {
-    grid-template-columns: repeat(4, 1fr);
-  }
-
-  .preview-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
-  .sticky-purchase {
-    bottom: 24px;
+    font-size: 31px;
   }
 }
 
